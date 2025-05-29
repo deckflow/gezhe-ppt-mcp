@@ -66,7 +66,7 @@ export const createServer = () => {
       if (name === "generate_ppt_by_topic") {
         const validatedArgs = GeneratePptByTopicSchema.parse(args);
         const { topic } = validatedArgs;
-        const apiKey = authInfo?.token || process.env.GEZHE_API_KEY;
+        const apiKey = authInfo?.token || process.env.API_KEY;
 
         // check api key
         if (!apiKey) {
@@ -340,7 +340,7 @@ const confirmOutline = async (
 // get auth info
 export const getAuthInfo = (req: express.Request): AuthInfo => {
   // query params or env
-  let apiKey = (req.query.token as string) || process.env.GEZHE_API_KEY;
+  let apiKey = (req.query.API_KEY as string) || process.env.API_KEY;
   // header Authorization
   const authHeader = req.headers.authorization as string | undefined;
   if (!apiKey && authHeader) {

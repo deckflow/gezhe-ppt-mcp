@@ -77,7 +77,7 @@ https://pro.gezhe.com/settings
       "command": "npx",
       "args": ["-y", "gezhe-mcp-server"],
       "env": {
-        "GEZHE_API_KEY": "gezhe mcp api key"
+        "API_KEY": "gezhe mcp api key"
       }
     }
   }
@@ -90,9 +90,9 @@ https://pro.gezhe.com/settings
   "mcpServers": {
     "gezhe-mcp-server": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "GEZHE_API_KEY", "gezhe/gezhe-mcp-server"],
+      "args": ["run", "-i", "--rm", "-e", "API_KEY", "gezhe/gezhe-mcp-server"],
       "env": {
-        "GEZHE_API_KEY": "your_key_here"
+        "API_KEY": "your_key_here"
       }
     }
   }
