@@ -1,4 +1,4 @@
-# gezhe-mcp-server
+# Gezhe-MCP-server
 
 ## 简介
 歌者 PPT MCP server， 可以通过话题生成 PPT
