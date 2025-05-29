@@ -1,293 +1,37 @@
 #!/usr/bin/env node
-import { z } from "zod";
-import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { v4 as uuidv4 } from "uuid";
-import { ExpressHttpStreamableMcpServer } from "./server.js";
 
-const GEZHE_API_ROOT = process.env.GEZHE_API_ROOT || "https://pro.gezhe.com/v1";
-const GEZHE_APP_DOMAIN = process.env.GEZHE_APP_DOMAIN || "pro.gezhe.com";
+// Parse command line arguments first
+const args = process.argv.slice(2);
+const scriptName = args[0] || "stdio";
 
-console.log("Initializing MCP Streamable-HTTP Server with Express");
-
-const getPayUpgradeUrl = () => {
-  return `https://${GEZHE_APP_DOMAIN}/upgrade`;
-};
-const getMcpSettingUrl = () => {
-  return `https://${GEZHE_APP_DOMAIN}/settings`;
-};
-
-// 向 gezhe server 发送 A2A 请求
-const makeA2ARequest = async (apiKey: string, requestBody: any) => {
-  const response = await fetch(`${GEZHE_API_ROOT}/mcp/gen`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "Response-Event-Stream": "yes",
-    },
-    body: JSON.stringify(requestBody),
-  });
-  // 401
-  if (response.status >= 400) {
-    console.error(
-      `Failed to generate outline: ${response.status} ${response.statusText}`
-    );
-    if (response.status === 401) {
-      throw new Error(
-        `您的 API Key 无效，请登录歌者检查后重试，歌者MCP服务器设置地址: ${getMcpSettingUrl()}`
-      );
+async function run() {
+  try {
+    // Dynamically import only the requested module to prevent all modules from initializing
+    switch (scriptName) {
+      case "stdio":
+        // Import and run the default server
+        await import("./stdio.js");
+        break;
+      case "sse":
+        // Import and run the SSE server
+        await import("./sse.js");
+        break;
+      case "streamableHttp":
+        // Import and run the streamable HTTP server
+        await import("./streamableHttp.js");
+        break;
+      default:
+        console.error(`Unknown script: ${scriptName}`);
+        console.log("Available scripts:");
+        console.log("- stdio");
+        console.log("- sse");
+        console.log("- streamableHttp");
+        process.exit(1);
     }
-    throw new Error(`${response.statusText}`);
+  } catch (error) {
+    console.error("Error running script:", error);
+    process.exit(1);
   }
-  return response;
-};
-const genOutline = async (
-  apiKey: string,
-  topic: string,
-  sendNotification: (notification: any) => Promise<void>
-) => {
-  const taskId = uuidv4();
-  const requestBody = {
-    jsonrpc: "2.0",
-    id: uuidv4(),
-    method: "tasks/sendSubscribe",
-    params: {
-      id: taskId,
-      message: {
-        role: "user",
-        parts: [{ type: "text", text: `帮我生成一篇PPT，主题为:《${topic}》` }],
-      },
-    },
-  };
+}
 
-  const response = await makeA2ARequest(apiKey, requestBody);
-  // response 返回的是 sse 流，需要解析
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error("Failed to get response reader");
-  }
-
-  const decoder = new TextDecoder();
-  await sendNotification({
-    method: "notifications/message",
-    params: {
-      level: "info",
-      data: `正在为您生成  PPT 大纲`,
-    },
-  });
-
-  let progress = 0;
-  let outline = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const result = decoder.decode(value, { stream: true });
-
-    progress += 1;
-    // 解析 sse 事件
-    const event = result.split("\n").find((line) => line.startsWith("data:"));
-    if (event) {
-      const eventData = JSON.parse(event.split("data:")[1]);
-
-      const result = eventData.result;
-      if (result && "status" in result) {
-        const status = result.status;
-        if (status.state === "failed") {
-          console.error(`Failed to generate outline: ${status}`);
-          const msg = status.message?.parts?.[0]?.text;
-          const metadata = status.message?.metadata;
-          if (metadata && metadata.insufficientPackage) {
-            // 余额不足，引导充值
-            throw new Error(
-              `余额不足，请充值后重试，支付链接：${getPayUpgradeUrl()}`
-            );
-          }
-          throw new Error(msg);
-        }
-      }
-
-      if (result && "artifact" in result) {
-        const artifact = result.artifact;
-        if (artifact.lastChunk) {
-          outline += artifact.parts?.[0]?.text;
-        } else {
-          await sendNotification({
-            method: "notifications/progress",
-            params: {
-              progress: progress,
-              progressToken: artifact.parts?.[0]?.text,
-            },
-          });
-        }
-      }
-    }
-  }
-  await sendNotification({
-    method: "notifications/message",
-    params: {
-      level: "info",
-      message: `PPT 大纲生成完成`,
-    },
-  });
-
-  return {
-    taskId,
-    outline,
-  };
-};
-
-const confirmOutline = async (
-  taskId: string,
-  apiKey: string,
-  outline: string,
-  sendNotification: (notification: any) => Promise<void>
-) => {
-  const requestBody = {
-    jsonrpc: "2.0",
-    id: uuidv4(),
-    method: "tasks/sendSubscribe",
-    params: {
-      id: taskId,
-      message: {
-        role: "user",
-        parts: [{ type: "text", text: outline }],
-      },
-    },
-  };
-
-  const response = await makeA2ARequest(apiKey, requestBody);
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error("Failed to get response reader");
-  }
-
-  const decoder = new TextDecoder();
-  await sendNotification({
-    method: "notifications/message",
-    params: {
-      level: "info",
-      data: `正在为您生成准备 ppt 模板`,
-    },
-  });
-
-  let genUrl = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const result = decoder.decode(value, { stream: true });
-
-    const event = result.split("\n").find((line) => line.startsWith("data:"));
-    if (event) {
-      const eventData = JSON.parse(event.split("data:")[1]);
-      const result = eventData.result;
-
-      if (result && "status" in result) {
-        const status = result.status;
-        if (status.state === "failed") {
-          console.error(`Failed to generate ppt: ${status}`);
-          const msg = status.message?.parts?.[0]?.text;
-          const metadata = status.message?.metadata;
-          if (metadata && metadata.insufficientPackage) {
-            // 余额不足，引导充值
-            throw new Error(
-              `余额不足，请充值后重试，支付链接：${getPayUpgradeUrl()}`
-            );
-          }
-          throw new Error(msg);
-        }
-        if (status.state === "input-required") {
-          const dataParts = status.message?.parts[0];
-          if (dataParts.type === "data" && dataParts.data?.genUrl) {
-            genUrl = dataParts.data.genUrl;
-            break;
-          }
-        }
-      }
-    }
-  }
-  await sendNotification({
-    method: "notifications/message",
-    params: {
-      level: "info",
-      message: `PPT 已经生成`,
-    },
-  });
-  return {
-    taskId,
-    genUrl,
-  };
-};
-const servers = ExpressHttpStreamableMcpServer(
-  {
-    name: "gezhe-mcp-server",
-  },
-  (server) => {
-    // 添加根据话题生成 ppt 工具
-    server.tool(
-      "generate_ppt_by_topic",
-      "Generate PowerPoint presentations from topics",
-      {
-        topic: z.string().describe("Topic to generate ppt for"),
-      },
-      async (
-        { topic },
-        { sendNotification, authInfo }
-      ): Promise<CallToolResult> => {
-        const apiKey = authInfo?.token;
-        // check api key
-        if (!apiKey) {
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: `您的 API Key 无效，请登录歌者检查后重试，歌者MCP服务器设置地址: ${getMcpSettingUrl()}`,
-              },
-            ],
-          };
-        }
-
-        console.log(`Tool Called: generate_ppt_by_topic (topic=${topic})`);
-
-        // Create a streaming response
-        try {
-          const { outline, taskId } = await genOutline(
-            apiKey,
-            topic,
-            sendNotification
-          );
-
-          const { genUrl } = await confirmOutline(
-            taskId,
-            apiKey,
-            outline,
-            sendNotification
-          );
-
-          return {
-            isError: false,
-            content: [
-              {
-                type: "text",
-                text: `ppt 已经生成，请点击链接选择模板`,
-                taskId,
-                preview_link: genUrl,
-              },
-            ],
-          };
-        } catch (error: any) {
-          console.error("Error sending notifications:", error);
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: `ppt 生成失败: ${error.message}`,
-              },
-            ],
-          };
-        }
-      }
-    );
-  }
-);
+run();
