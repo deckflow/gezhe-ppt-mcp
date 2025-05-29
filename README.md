@@ -29,7 +29,7 @@
   "mcpServers": {
     "歌者PPT": {
       "command": "npx",
-      "args": ["-y", "gezhe-mcp-server"],
+      "args": ["-y", "gezhe-mcp-server@latest"],
       "env": {
         "API_KEY": "替换为获取的 API_KEY"
       }
