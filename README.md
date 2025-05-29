@@ -74,7 +74,6 @@ https://pro.gezhe.com/settings
 {
   "mcpServers": {
     "gezhe-mcp-server": {
-      "type": "streamable-http",
       "command": "npx",
       "args": ["-y", "gezhe-mcp-server"],
       "env": {

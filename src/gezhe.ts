@@ -49,7 +49,7 @@ export const createServer = () => {
     const tools: Tool[] = [
       {
         name: "generate_ppt_by_topic",
-        description: "根据话题生成ppt",
+        description: "Generate PowerPoint presentations from topics",
         inputSchema: zodToJsonSchema(GeneratePptByTopicSchema) as ToolInput,
       },
     ];
