@@ -1,105 +1,39 @@
 # gezhe-mcp-server
 
-歌者 PPT gezhe.com MCP server
+## 简介
+歌者 PPT MCP server， 可以通过话题生成 PPT
 
----
-## Features
-Generate PowerPoint presentations from topics
-
-## Tools
+### Tools
 1. `generate_ppt_by_topic`
-   - Generate PowerPoint presentations from topics
-   - Inputs:
-     - `topic` (string): Topic to generate ppt for
-   - Returns: preview url
+   - 输入:
+     - `topic` (string): 话题名称
+   - 返回: 预览链接
 
-## Install and Run Locally
+## 使用指引：
 
-To install the dependencies, run:
+### 方法 1：Stream Http 
+1. 访问并登录 https://gezhe.com/ 
+2. 进入「设置-MCP 服务器」页面，复制页面中提供的 URL 地址
 
-```bash
-npm install
-```
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/53d01c39-a455-4533-929e-840746704aaa" />
 
-Then build:
+3. 将其粘贴到 Cherry Studio、Cursor 等客户端中使用。
 
-```bash
-npm run build
-```
+### 方法 2：本地执行
 
-## Running the Server
-
-### Production Mode
-
-To run the server in production mode:
-
-```bash
-npm start
-# or directly with
-node build/index.js
-```
-
-
-It runs on port 3000 by default. If you need another port, you can specify with the PORT env var.
-
-```bash
-PORT=3002 npm start
-# or
-PORT=3002 node build/index.js
-```
-
-### Development Mode
-
-For development, you can use the dev mode which automatically watches for changes in your source files, rebuilds, and restarts the server:
-
-```bash
-npm run dev
-```
-
-With a custom port:
-
-```bash
-PORT=3002 npm run dev
-```
-
-## Setup Config
-
-You can connect a client to your Streamable HTTP MCP Server once it's running. Configure per the client's configuration. There is the [mcp-config.json](/mcp-config.json) that has an example configuration that looks like this:
-
-### gezhe ppt MCP API Key
-https://pro.gezhe.com/settings
-
-### NPX
+1. 访问并登录 https://gezhe.com/ 
+2. 进入「设置-MCP 服务器」页面，获取页面中提供的 URL 地址，复制 URL 中末尾 token 的值。
+3. 复制一些配置，填入到 Cherry Studio、Cursor 等客户端中使用。
 ```json
 {
   "mcpServers": {
-    "gezhe-mcp-server": {
+    "歌者PPT": {
       "command": "npx",
       "args": ["-y", "gezhe-mcp-server"],
       "env": {
-        "GEZHE_API_KEY": "gezhe mcp api key"
+        "GEZHE_API_KEY": "替换为获取的 token"
       }
     }
   }
 }
 ```
-
-### DOCKER
-```json
-{
-  "mcpServers": {
-    "gezhe-mcp-server": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "GEZHE_API_KEY", "gezhe/gezhe-mcp-server"],
-      "env": {
-        "GEZHE_API_KEY": "your_key_here"
-      }
-    }
-  }
-}
-```
-
-
-
-
-
