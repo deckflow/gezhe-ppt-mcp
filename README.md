@@ -14,9 +14,6 @@
 ### 方法 1：Streamable HTTP
 1. 访问并登录 https://gezhe.com/ 
 2. 进入「设置-MCP 服务器」页面，复制页面中提供的 URL 地址
-
-<img width="800" alt="image" src="https://github.com/user-attachments/assets/c9d08387-825b-424a-a6c4-0ca600501bc2" />
-
 3. 将其粘贴到 Cherry Studio、Cursor 等客户端中使用。
 
 ### 方法 2：本地执行
