@@ -99,7 +99,7 @@ export const createServer = () => {
             content: [
               {
                 type: "text",
-                text: `ppt 已经生成，请点击链接选择模板`,
+                text: `ppt 已经生成，请点击链接选择模板：${genUrl}`,
                 taskId,
                 preview_link: genUrl,
               },
