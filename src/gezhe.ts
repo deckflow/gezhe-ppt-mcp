@@ -174,7 +174,7 @@ const genOutline = async (
       id: taskId,
       message: {
         role: "user",
-        parts: [{ type: "text", text: `帮我生成一篇PPT，主题为:《${topic}》` }],
+        parts: [{ type: "text", text: `${topic}` }],
       },
     },
   };
@@ -206,6 +206,7 @@ const genOutline = async (
     // 解析 sse 事件
     const event = result.split("\n").find((line) => line.startsWith("data:"));
     if (event) {
+      console.log("debug outline event:", event);
       const eventData = JSON.parse(event.split("data:")[1]);
 
       const result = eventData.result;
@@ -297,6 +298,7 @@ const confirmOutline = async (
 
     const event = result.split("\n").find((line) => line.startsWith("data:"));
     if (event) {
+      console.log("debug confirmOutline event:", event);
       const eventData = JSON.parse(event.split("data:")[1]);
       const result = eventData.result;
 
