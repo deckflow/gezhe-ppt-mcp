@@ -12,6 +12,7 @@ import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { SSEParser, EventSourceMessage } from "./sseParse.js";
 
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
@@ -186,7 +187,6 @@ const genOutline = async (
     throw new Error("Failed to get response reader");
   }
 
-  const decoder = new TextDecoder();
   await sendNotification({
     method: "notifications/message",
     params: {
@@ -197,63 +197,83 @@ const genOutline = async (
 
   let progress = 0;
   let outline = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const result = decoder.decode(value, { stream: true });
 
-    progress += 1;
-    // 解析 sse 事件
-    const event = result.split("\n").find((line) => line.startsWith("data:"));
-    if (event) {
-      console.log("debug outline event:", event);
-      const eventData = JSON.parse(event.split("data:")[1]);
+  return new Promise<{ taskId: string; outline: string }>((resolve, reject) => {
+    const parser = new SSEParser((message: EventSourceMessage) => {
+      try {
+        if (message.data) {
+          const eventData = JSON.parse(message.data);
+          const result = eventData.result;
 
-      const result = eventData.result;
-      if (result && "status" in result) {
-        const status = result.status;
-        if (status.state === "failed") {
-          console.error(`Failed to generate outline: ${status}`);
-          const msg = status.message?.parts?.[0]?.text;
-          const metadata = status.message?.metadata;
-          if (metadata && metadata.insufficientPackage) {
-            // 余额不足，引导充值
-            throw new Error(
-              `余额不足，请充值后重试，支付链接：${getPayUpgradeUrl()}`
-            );
+          if (result && "status" in result) {
+            const status = result.status;
+            if (status.state === "failed") {
+              console.error(`Failed to generate outline: ${status}`);
+              const msg = status.message?.parts?.[0]?.text;
+              const metadata = status.message?.metadata;
+              if (metadata && metadata.insufficientPackage) {
+                // 余额不足，引导充值
+                reject(
+                  new Error(
+                    `余额不足，请充值后重试，支付链接：${getPayUpgradeUrl()}`
+                  )
+                );
+                return;
+              }
+              reject(new Error(msg));
+              return;
+            }
           }
-          throw new Error(msg);
-        }
-      }
 
-      if (result && "artifact" in result) {
-        const artifact = result.artifact;
-        if (artifact.lastChunk) {
-          outline += artifact.parts?.[0]?.text;
-        } else {
-          await sendNotification({
-            method: "notifications/progress",
-            params: {
-              progress: progress,
-              progressToken: artifact.parts?.[0]?.text,
-            },
-          });
+          if (result && "artifact" in result) {
+            const artifact = result.artifact;
+            if (artifact.lastChunk) {
+              outline += artifact.parts?.[0]?.text;
+              // 大纲生成完成
+              sendNotification({
+                method: "notifications/message",
+                params: {
+                  level: "info",
+                  message: `PPT 大纲生成完成`,
+                },
+              }).then(() => {
+                resolve({ taskId, outline });
+              });
+            } else {
+              progress += 1;
+              sendNotification({
+                method: "notifications/progress",
+                params: {
+                  progress: progress,
+                  progressToken: artifact.parts?.[0]?.text,
+                },
+              });
+            }
+          }
         }
+      } catch (error: any) {
+        console.error("Error parsing SSE message:", error);
+        reject(error);
       }
-    }
-  }
-  await sendNotification({
-    method: "notifications/message",
-    params: {
-      level: "info",
-      message: `PPT 大纲生成完成`,
-    },
+    });
+
+    const processStream = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            parser.finish();
+            break;
+          }
+          parser.pushChunk(value);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    processStream();
   });
-
-  return {
-    taskId,
-    outline,
-  };
 };
 
 const confirmOutline = async (
@@ -281,7 +301,6 @@ const confirmOutline = async (
     throw new Error("Failed to get response reader");
   }
 
-  const decoder = new TextDecoder();
   await sendNotification({
     method: "notifications/message",
     params: {
@@ -290,53 +309,74 @@ const confirmOutline = async (
     },
   });
 
-  let genUrl = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const result = decoder.decode(value, { stream: true });
+  return new Promise<{ taskId: string; genUrl: string }>((resolve, reject) => {
+    let genUrl = "";
 
-    const event = result.split("\n").find((line) => line.startsWith("data:"));
-    if (event) {
-      console.log("debug confirmOutline event:", event);
-      const eventData = JSON.parse(event.split("data:")[1]);
-      const result = eventData.result;
+    const parser = new SSEParser((message: EventSourceMessage) => {
+      try {
+        if (message.data) {
+          const eventData = JSON.parse(message.data);
+          const result = eventData.result;
 
-      if (result && "status" in result) {
-        const status = result.status;
-        if (status.state === "failed") {
-          console.error(`Failed to generate ppt: ${status}`);
-          const msg = status.message?.parts?.[0]?.text;
-          const metadata = status.message?.metadata;
-          if (metadata && metadata.insufficientPackage) {
-            // 余额不足，引导充值
-            throw new Error(
-              `余额不足，请充值后重试，支付链接：${getPayUpgradeUrl()}`
-            );
+          if (result && "status" in result) {
+            const status = result.status;
+            if (status.state === "failed") {
+              console.error(`Failed to generate ppt: ${status}`);
+              const msg = status.message?.parts?.[0]?.text;
+              const metadata = status.message?.metadata;
+              if (metadata && metadata.insufficientPackage) {
+                // 余额不足，引导充值
+                reject(
+                  new Error(
+                    `余额不足，请充值后重试，支付链接：${getPayUpgradeUrl()}`
+                  )
+                );
+                return;
+              }
+              reject(new Error(msg));
+              return;
+            }
+            if (status.state === "input-required") {
+              const dataParts = status.message?.parts[0];
+              if (dataParts.type === "data" && dataParts.data?.genUrl) {
+                genUrl = dataParts.data.genUrl;
+                // PPT 生成完成
+                sendNotification({
+                  method: "notifications/message",
+                  params: {
+                    level: "info",
+                    message: `PPT 已经生成`,
+                  },
+                }).then(() => {
+                  resolve({ taskId, genUrl });
+                });
+              }
+            }
           }
-          throw new Error(msg);
         }
-        if (status.state === "input-required") {
-          const dataParts = status.message?.parts[0];
-          if (dataParts.type === "data" && dataParts.data?.genUrl) {
-            genUrl = dataParts.data.genUrl;
+      } catch (error: any) {
+        console.error("Error parsing SSE message:", error);
+        reject(error);
+      }
+    });
+
+    const processStream = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            parser.finish();
             break;
           }
+          parser.pushChunk(value);
         }
+      } catch (error) {
+        reject(error);
       }
-    }
-  }
-  await sendNotification({
-    method: "notifications/message",
-    params: {
-      level: "info",
-      message: `PPT 已经生成`,
-    },
+    };
+
+    processStream();
   });
-  return {
-    taskId,
-    genUrl,
-  };
 };
 
 // get auth info
