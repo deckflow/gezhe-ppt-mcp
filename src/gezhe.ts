@@ -4,6 +4,7 @@ import {
   CallToolRequestSchema,
   CallToolResult,
   ListToolsRequestSchema,
+  SetLevelRequestSchema,
   Tool,
   ToolSchema,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -58,7 +59,25 @@ export const createServer = () => {
       tools,
     };
   });
+  let currentLogLevel = "info";
 
+  // 添加 logging/setLevel 处理器
+  server.setRequestHandler(SetLevelRequestSchema, async (request) => {
+    const { level } = request.params || {};
+
+    // 验证日志级别
+    const validLevels = ["error", "warn", "info", "debug"];
+    if (level && validLevels.includes(level)) {
+      currentLogLevel = level;
+      console.log(`[MCP Server] Log level set to: ${level}`);
+    } else {
+      console.warn(
+        `[MCP Server] Invalid log level: ${level}, keeping current: ${currentLogLevel}`
+      );
+    }
+
+    return {};
+  });
   server.setRequestHandler(
     CallToolRequestSchema,
     async (request, extra): Promise<CallToolResult> => {
@@ -71,6 +90,7 @@ export const createServer = () => {
 
         // check api key
         if (!apiKey) {
+          console.error("No valid api key provided");
           return {
             isError: true,
             content: [
@@ -87,14 +107,14 @@ export const createServer = () => {
             topic,
             extra.sendNotification
           );
-
-          const { genUrl } = await confirmOutline(
+          // 自动确认，进行下一步
+          await confirmOutline(taskId, apiKey, outline, extra.sendNotification);
+          // 自动确认表单，得到 genUrl
+          const { genUrl } = await confirmForm(
             taskId,
             apiKey,
-            outline,
             extra.sendNotification
           );
-
           return {
             isError: false,
             content: [
@@ -138,6 +158,7 @@ export const createServer = () => {
 
 // 向 gezhe server 发送 A2A 请求
 const makeA2ARequest = async (apiKey: string, requestBody: any) => {
+  console.error(`makeA2ARequest: ${GEZHE_API_ROOT}/mcp/gen`);
   const response = await fetch(`${GEZHE_API_ROOT}/mcp/gen`, {
     method: "POST",
     headers: {
@@ -308,6 +329,98 @@ const confirmOutline = async (
       data: `正在为您生成准备 ppt 模板`,
     },
   });
+
+  return new Promise<{ taskId: string }>((resolve, reject) => {
+    const parser = new SSEParser((message: EventSourceMessage) => {
+      try {
+        if (message.data) {
+          const eventData = JSON.parse(message.data);
+          const result = eventData.result;
+
+          if (result && "status" in result) {
+            const status = result.status;
+            if (status.state === "failed") {
+              console.error(`Failed to generate ppt: ${status}`);
+              const msg = status.message?.parts?.[0]?.text;
+              const metadata = status.message?.metadata;
+              if (metadata && metadata.insufficientPackage) {
+                // 余额不足，引导充值
+                reject(
+                  new Error(
+                    `余额不足，请充值后重试，支付链接：${getPayUpgradeUrl()}`
+                  )
+                );
+                return;
+              }
+              reject(new Error(msg));
+              return;
+            }
+            if (status.state === "input-required") {
+              const dataParts = status.message?.parts[0];
+              if (
+                dataParts.type === "data" &&
+                dataParts.data?.type === "form"
+              ) {
+                sendNotification({
+                  method: "notifications/message",
+                  params: {
+                    level: "info",
+                    message: `补充信息确认`,
+                  },
+                }).then(() => {
+                  resolve({ taskId });
+                });
+              }
+            }
+          }
+        }
+      } catch (error: any) {
+        console.error("Error parsing SSE message:", error);
+        reject(error);
+      }
+    });
+
+    const processStream = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            parser.finish();
+            break;
+          }
+          parser.pushChunk(value);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    processStream();
+  });
+};
+
+const confirmForm = async (
+  taskId: string,
+  apiKey: string,
+  sendNotification: (notification: any) => Promise<void>
+) => {
+  const requestBody = {
+    jsonrpc: "2.0",
+    id: uuidv4(),
+    method: "tasks/sendSubscribe",
+    params: {
+      id: taskId,
+      message: {
+        role: "user",
+        parts: [{ type: "data", data: {} }],
+      },
+    },
+  };
+  const response = await makeA2ARequest(apiKey, requestBody);
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Failed to get response reader");
+  }
 
   return new Promise<{ taskId: string; genUrl: string }>((resolve, reject) => {
     let genUrl = "";
