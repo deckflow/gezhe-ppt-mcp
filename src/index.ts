@@ -32,6 +32,15 @@ async function run() {
     console.error("Error running script:", error);
     process.exit(1);
   }
+
+  setInterval(() => {
+    const usage = process.memoryUsage();
+    console.log(
+      `Memory: RSS=${usage.rss / 1024 / 1024}MB, Heap=${
+        usage.heapUsed / 1024 / 1024
+      }MB`
+    );
+  }, 30000);
 }
 
 run();
