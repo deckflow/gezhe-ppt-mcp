@@ -355,12 +355,17 @@ const genOutline = async (
   let progress = 0;
   let outline = "";
   let isResolved = false;
+  let timeoutId: NodeJS.Timeout | null = null;
 
   return new Promise<{ taskId: string; outline: string }>((resolve, reject) => {
     const cleanup = () => {
       isResolved = true;
       abortController.abort();
       reader.cancel().catch(() => {});
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
     };
 
     const handleMessage = (message: EventSourceMessage) => {
@@ -448,7 +453,7 @@ const genOutline = async (
     );
 
     // 设置超时
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       if (!isResolved) {
         cleanup();
         reject(new Error("生成大纲超时"));
@@ -497,12 +502,17 @@ const confirmOutline = async (
   });
 
   let isResolved = false;
+  let timeoutId: NodeJS.Timeout | null = null;
 
   return new Promise<{ taskId: string }>((resolve, reject) => {
     const cleanup = () => {
       isResolved = true;
       abortController.abort();
       reader.cancel().catch(() => {});
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
     };
 
     const handleMessage = (message: EventSourceMessage) => {
@@ -577,7 +587,7 @@ const confirmOutline = async (
       }
     );
 
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       if (!isResolved) {
         cleanup();
         reject(new Error("确认大纲超时"));
@@ -618,12 +628,17 @@ const confirmForm = async (
 
   let isResolved = false;
   let genUrl = "";
+  let timeoutId: NodeJS.Timeout | null = null;
 
   return new Promise<{ taskId: string; genUrl: string }>((resolve, reject) => {
     const cleanup = () => {
       isResolved = true;
       abortController.abort();
       reader.cancel().catch(() => {});
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
     };
 
     const handleMessage = (message: EventSourceMessage) => {
@@ -697,7 +712,7 @@ const confirmForm = async (
       }
     );
 
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       if (!isResolved) {
         cleanup();
         reject(new Error("生成PPT超时"));
