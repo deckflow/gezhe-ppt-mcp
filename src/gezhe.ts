@@ -321,7 +321,7 @@ const genOutline = async (
   });
 
   let progress = 0;
-  let outline = "";
+  const outlineChunks: string[] = [];
   let isResolved = false;
   let timeoutId: NodeJS.Timeout | null = null;
 
@@ -371,7 +371,11 @@ const genOutline = async (
           if (result && "artifact" in result) {
             const artifact = result.artifact;
             if (artifact.lastChunk) {
-              outline += artifact.parts?.[0]?.text || "";
+              const text = artifact.parts?.[0]?.text || "";
+              if (text) {
+                outlineChunks.push(text);
+              }
+              const outline = outlineChunks.join("\n");
 
               sendNotification({
                 method: "notifications/message",
@@ -389,7 +393,10 @@ const genOutline = async (
                   reject(err);
                 });
             } else {
-              outline += artifact.parts?.[0]?.text || "";
+              const text = artifact.parts?.[0]?.text || "";
+              if (text) {
+                outlineChunks.push(text);
+              }
               progress += 1;
 
               // 异步发送进度通知，不阻塞流处理
