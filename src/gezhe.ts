@@ -21,10 +21,10 @@ type ToolInput = z.infer<typeof ToolInputSchema>;
 const GEZHE_API_ROOT = process.env.GEZHE_API_ROOT || "https://pro.gezhe.com/v1";
 const GEZHE_APP_DOMAIN = process.env.GEZHE_APP_DOMAIN || "pro.gezhe.com";
 const REQUEST_TIMEOUT = 300000; // 5分钟超时
-const MAX_CONCURRENT_REQUESTS = 100; // 最大并发请求数
+const MAX_CONCURRENT_REQUESTS = 20; // 最大并发请求数（单进程 Node.js 建议不超过 20）
 
-// 请求计数器
-let activeRequests = 0;
+// 请求计数器（导出以便监控）
+export let activeRequests = 0;
 
 const getPayUpgradeUrl = () => {
   return `https://${GEZHE_APP_DOMAIN}/upgrade`;
@@ -37,48 +37,12 @@ export const GeneratePptByTopicSchema = z.object({
   topic: z.string().describe("Topic to generate ppt for"),
 });
 
-// 创建一个可取消的 Promise
-class CancellablePromise<T> {
-  private abortController: AbortController;
-  private promise: Promise<T>;
-
-  constructor(
-    executor: (
-      resolve: (value: T) => void,
-      reject: (reason?: any) => void,
-      signal: AbortSignal
-    ) => void
-  ) {
-    this.abortController = new AbortController();
-    this.promise = new Promise<T>((resolve, reject) => {
-      executor(resolve, reject, this.abortController.signal);
-    });
-  }
-
-  getPromise(): Promise<T> {
-    return this.promise;
-  }
-
-  cancel(): void {
-    this.abortController.abort();
-  }
+export interface CreateServerOptions {
+  // 工具调用完成后的回调（成功或失败都会触发）
+  onToolComplete?: () => void;
 }
 
-// 带超时的 Promise
-function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  errorMessage: string
-): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
-    ),
-  ]);
-}
-
-export const createServer = () => {
+export const createServer = (options?: CreateServerOptions) => {
   const server = new Server(
     {
       name: "gezhe-mcp-server",
@@ -165,23 +129,25 @@ export const createServer = () => {
           }
 
           try {
-            // 添加超时保护
-            const { outline, taskId } = await withTimeout(
-              genOutline(apiKey, topic, extra.sendNotification),
-              REQUEST_TIMEOUT,
-              "生成大纲超时，请重试"
+            // 各函数内部已有超时和 cleanup 机制，不再外层包装 withTimeout
+            // 外层 withTimeout 会导致内部 Promise 泄漏（reader/连接不释放）
+            const { outline, taskId } = await genOutline(
+              apiKey,
+              topic,
+              extra.sendNotification
             );
 
-            await withTimeout(
-              confirmOutline(taskId, apiKey, outline, extra.sendNotification),
-              REQUEST_TIMEOUT,
-              "确认大纲超时，请重试"
+            await confirmOutline(
+              taskId,
+              apiKey,
+              outline,
+              extra.sendNotification
             );
 
-            const { genUrl } = await withTimeout(
-              confirmForm(taskId, apiKey, extra.sendNotification),
-              REQUEST_TIMEOUT,
-              "生成PPT超时，请重试"
+            const { genUrl } = await confirmForm(
+              taskId,
+              apiKey,
+              extra.sendNotification
             );
 
             return {
@@ -220,6 +186,8 @@ export const createServer = () => {
         };
       } finally {
         activeRequests--;
+        // 工具调用完成，通知外部可以清理 session
+        options?.onToolComplete?.();
       }
     }
   );

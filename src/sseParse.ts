@@ -152,9 +152,12 @@ export class SSEParser {
   }
 
   private concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-    const res = new Uint8Array(a.length + b.length);
+    // 预分配 1.5 倍空间减少频繁分配
+    const needed = a.length + b.length;
+    const res = new Uint8Array(Math.max(needed, Math.ceil(needed * 1.5)));
     res.set(a);
     res.set(b, a.length);
-    return res;
+    // 返回精确大小的 view，避免后续解析越界
+    return new Uint8Array(res.buffer, 0, needed);
   }
 }
